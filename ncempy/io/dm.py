@@ -499,6 +499,7 @@ class fileDM:
         try:
             # python 3 decode
             return ''.join([chr(item) for item in _bin])
+            # testing comments for git
         except ValueError:
             # python2 throws VE for item>255
             return ''.join([unichr(item).encode('utf-8') for item in _bin])
