@@ -492,16 +492,16 @@ class fileDM:
             arrInfo = self._readArrayData(arrayTypes) #only info of the array is read. It is read later if needed
             self._storeTag(self.curTagName,arrInfo)
 
-    def _bin2str(self,bin):
+    def _bin2str(self, _bin):
         '''Utility function to convert a numpy array of binary values to a python string.
         
         '''
         try:
             # python 3 decode
-            return ''.join([chr(item) for item in bin])
+            return ''.join([chr(item) for item in _bin])
         except ValueError:
             # python2 throws VE for item>255
-            return ''.join([unichr(item).encode('utf-8') for item in bin])
+            return ''.join([unichr(item).encode('utf-8') for item in _bin])
 
     def _encodedTypeSize(self, encodedType):
         '''Return the number of bytes in a data type for the encodings used by DM.
