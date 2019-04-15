@@ -496,7 +496,12 @@ class fileDM:
         '''Utility function to convert a numpy array of binary values to a python string.
         
         '''
-        return ''.join([chr(item) for item in bin])
+        try:
+            # python 3 decode
+            return ''.join([chr(item) for item in bin])
+        except ValueError:
+            # python2 throws VE for item>255
+            return ''.join([unichr(item).decode('utf-8') for item in bin])
 
     def _encodedTypeSize(self, encodedType):
         '''Return the number of bytes in a data type for the encodings used by DM.
