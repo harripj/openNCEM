@@ -1,51 +1,79 @@
-'''
+"""
 This module provides an interface to the Berkeley EMD file format.
 
 See https://emdatasets.com/ for more details.
-'''
+
+* It fully supports v0.2 for reading and writing
+
+Note
+----
+General users:
+    Use the simplified emd.emdReader() function to load the data and meta
+    data as a python dictionary.
+
+Advanced users and developers:
+    Access the file internals through the emd.fileDEMD() class.
+
+"""
+
+from pathlib import Path
+import datetime
 
 import numpy as np
 import h5py
-import datetime
 
 
 class fileEMD:
-    '''Class to represent EMD files. 
-    
+    """Class to represent Berkelely EMD files.
+
     Implemented for spec 0.2 using the recommended layout for metadata.
-    
-    Meant to provide convenience functions for commonly occuring tasks. This means that you will still want to acces fileEMD.file_hdl to manipulate the HDF5 file for not so commonly occuring tasks.
-    
-    Parameters:
-        filename (str):    Name of the EMD file.
-        readonly (bool):    Set to open in read only mode.
-    
-    Note:
-        The EMD module does not currently have a simplified "emdReader" like MRC, SER and DM. This will be offered in a future update.
-    
-    Example:
-        Open an Berkeley EMD file. List the available data sets. Load a 3D data set and plot the first image. 
-        
-            >>> from ncempy.io import emd
-            >>> import matplotlib.pyplot as plt
-            >>> emd1 = emd.fileEMD('filename.emd')
-            >>> [print(dataGroup.name) for dataGroup in emd1.list_emds]; #Use the builtin list_emds variable to print all available EMD datasets
-            >>> data1,dims1 = emd1.get_emdgroup(emd1.list_emds[0]) #load the first full data array and dimension information
-            >>> fg1,ax1 = plt.subplots(1,1)
-            >>> ax1.imshow(data1[0,:,:],extent=(dims1[1][0][0],dims1[1][0][-1],dims1[2][0][0],dims1[2][0][-1])) #the extent uses the first and last array values of hte dimension vectors
-            >>> ax1.set(xlabel='{0[1]} ({0[2]})'.format(dims1[1]),ylabel='{0[1]} ({0[2]})'.format(dims1[2])) #label the axes with the name and units of each dimension vector
-            >>> plt.show()
-            >>> del emd1 #close the emd file
-    '''
-    
-    def __init__(self, filename, readonly=False):
-        '''Init opening/creating the file.
-        
-        '''
-        
-        ## necessary declarations in case something goes bad
+
+    Attributes
+    ----------
+
+    file_hdl : h5py.File
+        The h5py file handle which provides direct access to the underlying h5py file structure.
+    version : tuple
+        A 2-tuple of the major and minor EMD version as ints.
+    data : h5py.Group
+        A link to the data group in the EMD file.
+    microscope : h5py.Group
+        A link to the microsocpe EMD group with metadata.
+    sample : h5py.Group
+        A link to the sample EMD group with metadata.
+    user : h5py.Group
+        A link to the user EMD group with metadata.
+    comments : h5py.Group
+        A link to the comments in this EMD file. A time stamp is included with the comment.
+    list_emds : list
+        A list of the EMD groups in the file.
+
+    Examples
+    --------
+    Open an Berkeley EMD file using the *advanced* interface. See the emdReader function for a more convenient
+    way to load the data. We show how to list the available data sets, load a 3D data set and plot the first image.
+
+        >>> from ncempy.io import emd
+        >>> with emd.fileEMD('filename.emd') as emd1:
+        >>>     [print(dataGroup.name) for dataGroup in emd1.list_emds] # print all available EMD datasets
+        >>>     data1, dims1 = emd1.get_emdgroup(0) # load the first full data array and dimension information
+    """
+
+    def __init__(self, filename, readonly=True):
+        """Init opening/creating the file.
+
+        Parameters
+        ----------
+        filename : str or pathlib.Path
+            Path to the EMD file.
+        readonly : bool, default True
+            Set to False to allow writing to the file.
+
+        """
+
+        # necessary declarations in case something goes bad
         self.file_hdl = None
-        
+
         # convenience handles to access the data in the emd file, everything can as well be accessed using the file_hdl
         self.version = None
         self.data = None
@@ -53,11 +81,15 @@ class fileEMD:
         self.sample = None
         self.user = None
         self.comments = None
-        self.list_emds = []             # list of HDF5 groups with emd_data_type type
-        
-        # check for string
-        if not isinstance(filename, str):
-            raise TypeError('Filename is supposed to be a string!')
+        self.list_emds = []  # list of HDF5 groups with emd_data_type type 1
+
+        # check filename type, change to string
+        if isinstance(filename, str):
+            pass
+        elif isinstance(filename, Path):
+            filename = str(filename)
+        else:
+            raise TypeError('Filename is supposed to be a string or pathlib.Path')
 
         # try opening the file
         if readonly:
@@ -72,137 +104,197 @@ class fileEMD:
             except:
                 print('Error opening file for read/write: "{}"'.format(filename))
                 raise
-        
-        
+
         # if we got a working file
-        if self.file_hdl:        
-        
+        if self.file_hdl:
             # check version information
             if 'version_major' in self.file_hdl.attrs and 'version_minor' in self.file_hdl.attrs:
                 # read version information
                 self.version = (self.file_hdl.attrs['version_major'], self.file_hdl.attrs['version_minor'])
                 # compare to implementation
-                if not self.version == (0,2):
-                    print('WARNING: You are reading a version {}.{} EMD file, this implementation assumes version 0.2!'.format(self.version[0], self.version[1]))
+                if not self.version == (0, 2):
+                    print('WARNING: You are reading a version {}.{} EMD file, '
+                          'this implementation assumes version 0.2!'.format(self.version[0], self.version[1]))
             else:
                 # set version information
                 if not readonly:
                     self.file_hdl.attrs['version_major'] = 0
                     self.file_hdl.attrs['version_minor'] = 2
-                
+
             # check for data group
-            if not 'data' in self.file_hdl:
+            if 'data' not in self.file_hdl:
                 if not readonly:
                     self.data = self.file_hdl.create_group('data')
             else:
                 self.data = self.file_hdl['data']
-                
+
             # check for data group
-            if not 'microscope' in self.file_hdl:
+            if 'microscope' not in self.file_hdl:
                 if not readonly:
                     self.microscope = self.file_hdl.create_group('microscope')
             else:
                 self.microscope = self.file_hdl['microscope']
-                
+
             # check for data group
-            if not 'sample' in self.file_hdl:
+            if 'sample' not in self.file_hdl:
                 if not readonly:
                     self.sample = self.file_hdl.create_group('sample')
             else:
                 self.sample = self.file_hdl['sample']
-                
+
             # check for data group
-            if not 'user' in self.file_hdl:
+            if 'user' not in self.file_hdl:
                 if not readonly:
                     self.user = self.file_hdl.create_group('user')
             else:
                 self.user = self.file_hdl['user']
-                
+
             # check for data group
-            if not 'comments' in self.file_hdl:
+            if 'comments' not in self.file_hdl:
                 if not readonly:
                     self.comments = self.file_hdl.create_group('comments')
             else:
                 self.comments = self.file_hdl['comments']
-                
+
             # find emd_data_type groups in the file
             self.list_emds = self.find_emdgroups(self.file_hdl)
-            
 
     def __del__(self):
-        '''Destructor for EMD file object. 
-        
-        '''
+        """Destructor for EMD file object.
+
+        """
         # close the file
-        #if(not self.file_hdl.closed):
+        # if(not self.file_hdl.closed):
         self.file_hdl.close()
 
     def __enter__(self):
-        '''Implement python's with staement
-        
-        '''
+        """Implement python's with statement
+
+        """
         return self
-        
-    def __exit__(self,type,value,traceback):
-        '''Implement python's with statment
+
+    def __exit__(self, exception_type, exception_value, traceback):
+        """Implement python's with statement
         and close the file via __del__()
-        '''
+        """
         self.__del__()
         return None
-        
+
     def find_emdgroups(self, parent):
-        '''Find all emd_data_type groups within the group parent and return a list of references to their HDF5 groups.
-        
-        Parameters:
-            parent (h5py._hl.group.Group):  Handle to the parent group.
-            
-        Returns:
-            (list):    A list of h5py._hl.group.Group handles to children groups being emd_data_type groups.
-            
-        '''
-        
-        emds = []
-        
+        """Find all emd_data_type groups within the group parent and return a list of references to their HDF5 groups.
+
+        Parameters
+        ----------
+            parent: h5py.Group
+                Handle to the parent group.
+
+        Returns
+        -------
+            : list
+                A list of h5py.Group handles to children groups
+                being emd_data_type groups.
+
+        """
+
+        emds0 = []
+
         # recursive function to run and retrieve groups with emd_group_type set to 1
         def proc_group(group, emds):
             # take a look at each item in the group
             for item in group:
                 # check if group
-                if group.get(item, getclass=True) == h5py._hl.group.Group:
+                if group.get(item, getclass=True) == h5py.Group:
                     item = group.get(item)
                     # check if emd_group_type
-                    if 'emd_group_type' in item.attrs:
+                    if 'emd_group_type' in item.attrs and 'data' in item.keys():
                         if item.attrs['emd_group_type'] == 1:
                             emds.append(item)
                     # process subgroups
                     proc_group(item, emds)
-        
+
         # run
-        proc_group(parent, emds)
-        
-        return emds
+        proc_group(parent, emds0)
 
+        return emds0
 
-    def get_emdgroup(self, group):
-        '''Get the emdtype data saved in in group.
-        
-        Parameters:
-            group (h5py._hl.group.Group):   Reference to the emdtype HDF5 group.
-        
-        Returns:
-            (tuple/None):    None or tuple containing:
-            
-                np.ndarray:    The data of the emdtype group.
-                
-                list:    List of dimension vectors plus labels and units.
-                
-        '''
-        
+    def get_emddims(self, group):
+        """Get the emdtype dimensions saved in in group.
+
+        Parameters
+        ----------
+            group: h5py.Group
+                Reference to the emdtype HDF5 group.
+
+        Returns
+        -------
+            : tuple
+                List of dimension vectors plus labels and units.
+
+        """
+        # get the dims
+        dims = []
+        for ii in range(group['data'].ndim):
+            dim = group['dim{}'.format(ii + 1)]
+            # save them as (vector, name, units)
+
+            if isinstance(dim.attrs['name'], np.ndarray):
+                name = dim.attrs['name'][0]
+            else:
+                name = dim.attrs['name']
+
+            if isinstance(dim.attrs['units'], np.ndarray):
+                units = dim.attrs['units'][0]
+            else:
+                units = dim.attrs['units']
+
+            # Handle bytes objects by decoding them to strings
+            # If something goes wrong, the original attribute is left as-is
+            try:
+                if isinstance(name, bytes):
+                    name = name.decode('utf-8')
+                if isinstance(units, bytes):
+                    units = units.decode('utf-8')
+            except:
+                pass
+
+            dims.append((dim[:], name, units))
+
+        dims = tuple(dims)
+        return dims
+
+    def get_emdgroup(self, group, memmap=False):
+        """Get the emd data saved in the requested group.
+
+        Parameters
+        ----------
+            group: h5py._hl.group.Group or int
+                Reference to the HDF5 group to load. If int is used then the item corresponding to self.list_emds
+                is loaded
+            memmap: bool
+                Return the data as a memmap instead of loading everything into memory
+
+        Returns
+        -------
+            : tuple or None
+                None or tuple containing:
+                    : np.ndarray
+                        The data of the emdtype group.
+                    : list
+                        List of [0] dimension vectors, [1] labels and [2] units.
+        """
+
         # check input
-        if not isinstance(group, h5py._hl.group.Group):
-            raise TypeError('group needs to refer to a valid HDF5 group!')
-            
-        if not 'emd_group_type' in group.attrs:
+        if not isinstance(group, h5py.Group):
+            if isinstance(group, int):
+                try:
+                    group = self.list_emds[group]
+                except IndexError:
+                    print('group does not exist')
+                    return
+            else:
+                raise TypeError('group needs to refer to a valid HDF5 group!')
+
+        if 'emd_group_type' not in group.attrs:
             raise TypeError('group is not a emd_group_type group!')
         if not group.attrs['emd_group_type'] == 1:
             raise TypeError('group is not a emd_group_type group!')
@@ -210,84 +302,82 @@ class fileEMD:
         # retrieve data
         try:
             # get the data
-            data = group['data'][:]
-            
-            # get the dims
-            dims = []
-            for i in range(len(data.shape)):
-                dim = group['dim{}'.format(i+1)]
-                # save them as (vector, name, units)
-                
-                if isinstance(dim.attrs['name'], np.ndarray):
-                    name = dim.attrs['name'][0]
-                else:
-                    name = dim.attrs['name']
-                
-                if isinstance(dim.attrs['units'], np.ndarray):
-                    units = dim.attrs['units'][0]
-                else:
-                    units = dim.attrs['units']
-                    
-                dims.append( (dim[:], name.decode('utf-8'), units.decode('utf-8')) )
-            
-            dims = tuple(dims)
-            
+            if memmap:
+                data = group['data']
+            else:
+                data = group['data'][:]
+
+            # get the dimensions.
+            dims = self.get_emddims(group)
+
             return data, dims
-            
         except:
             # if something goes wrong, return None
             print('Content of "{}" does not seem to be in emd specified shape'.format(group.name))
-            
+
             return None
-            
 
     def write_dim(self, label, dim, parent):
-        '''Auxiliary function to write a dim dataset to parent.
-        
+        """Auxiliary function to write a dim dataset to parent.
+
         Input is not checked for sanity, so handle exceptions in call.
-        
-        Parameters:
-            label (str):    Label for dataset, usually dim1, dim2, dimN.
-            dim (tuple):    Tuple containing (data, name, units).
-            parent (h5py._hl.group.Group):    HDF5 handle to parent group.
-        
-        Returns:
-            (h5py._hl.group.Group):    HDF5 dataset handle referencing this dim.
-            
-        '''
-        
+
+        Parameters
+        ----------
+            label: str
+                Label for dataset, usually dim1, dim2, dimN.
+            dim: tuple
+                Tuple containing (data, name, units).
+            parent: h5py.Group
+                HDF5 handle to parent group.
+
+        Returns
+        -------
+            : h5py.Group
+                HDF5 dataset handle referencing this dim.
+
+        """
+
         try:
             dset = parent.create_dataset(label, data=dim[0])
             dset.attrs['name'] = np.string_(dim[1])
             dset.attrs['units'] = np.string_(dim[2])
         except:
             raise RuntimeError('Error during writing dim dataset')
-        
+
         return dset
-        
-        
-    def put_emdgroup(self, label, data, dims, parent=None, overwrite=False):
-        '''Put an emdtype dataset into the EMD file.
-        
-        Parameters:
-            label (str):    Label for the emdtype group containing the dataset.
-            data (np.ndarray):    Numpy array containing the data.
-            dims (tuple):    Tuple containing the necessary dims as ((vec, name, units), (vec, name, units), ...)
-            parent (h5py._hl.group.Group/None):    Parent for the emdtype group, if None it will be written to /data.
-            overwrite (bool):    Set to force overwriting entry in EMD file.
-        
-        Returns:
-            (h5py._hl.group.Group/None):    Group referencing this emdtype dataset or None if failed.
-            
-        '''
-        
+
+    def put_emdgroup(self, label, data, dims, parent=None, overwrite=False, **kwargs):
+        """Put an emdtype dataset into the EMD file.
+
+        Parameters
+        ----------
+            label: str
+                Label for the emdtype group containing the dataset.
+            data: np.ndarray
+                Numpy array containing the data.
+            dims: tuple
+                Tuple containing the necessary dims as ((vec, name, units), (vec, name, units), ...)
+            parent: h5py.Group or None
+                Parent for the emdtype group, if None it will be written to /data.
+            overwrite: bool
+                Set to force overwriting entry in EMD file.
+            **kwargs: various
+                Keyword arguments to be passed to h5py.create_dataset(), e.g. for compression.
+
+        Returns
+        -------
+            : h5py.Group or None
+                Group referencing this emdtype dataset or None if failed.
+        """
+
         # check input
         if not isinstance(label, str):
             raise TypeError('label needs to be string!')
-        
+
         if not isinstance(data, np.ndarray):
             raise TypeError('data needs to be a numpy.ndarray!')
-            
+
         try:
             assert len(dims) == len(data.shape)
             for i in range(len(dims)):
@@ -295,9 +385,9 @@ class fileEMD:
                 assert dims[i][0].shape[0] == data.shape[i]
         except:
             raise TypeError('Something wrong with the provided dims')
-        
+
         # write stuff to HDF5
-        
+
         # create group
         try:
             if parent:
@@ -309,7 +399,7 @@ class fileEMD:
                         print('"{}" already exists in "{}"'.format(label, parent.name))
                         raise RuntimeError('"{}" already exists in "{}"'.format(label, parent.name))
                 grp = parent.create_group(label)
-                
+
             else:
                 if label in self.data:
                     if overwrite:
@@ -320,43 +410,45 @@ class fileEMD:
                         raise RuntimeError('"{}" already exists in "{}"'.format(label, self.data.name))
 
                 grp = self.data.create_group(label)
-                
+
             # add attribute
             grp.attrs['emd_group_type'] = 1
-               
+
             # create dataset
-            dset = grp.create_dataset('data', data=data)
-             
+            _ = grp.create_dataset('data', data=data, **kwargs)
+
             # create dim datasets
             for i in range(len(dims)):
-                self.write_dim('dim{}'.format(i+1), dims[i], grp)
-                    
+                self.write_dim('dim{}'.format(i + 1), dims[i], grp)
+
             # update emds list
             self.list_emds = self.find_emdgroups(self.file_hdl)
-                    
+
             return grp
-           
+
         except:
             print('Something went wrong trying to write the dataset.')
-                
+
             return None
 
-
     def put_comment(self, msg, timestamp=None):
-        '''Create a comment in the EMD file.
-        
+        """Create a comment in the EMD file.
+
         If timestamp already exists, the msg is appended to existing comment.
-        
-        Parameters:
-            msg (str):    String of the message to save.
-            timestamp (str/None):    Timestamp used as the key, defaults to the current UTC time.
-        
-        '''
-        
+
+        Parameters
+        ----------
+            msg: str
+                String of the message to save.
+            timestamp: str/None
+                Timestamp used as the key, defaults to the current UTC time.
+
+        """
+
         # check input
         if not isinstance(msg, str):
             raise TypeError('msg needs to be a string!')
-        
+
         # create timestamp if missing
         if not timestamp:
             timestamp = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S (UTC)')
@@ -366,33 +458,137 @@ class fileEMD:
                 timestamp = str(timestamp)
             except:
                 raise
-        
+
         # write comment
         if timestamp in self.comments.attrs:
             # append to existing
-            self.comments.attrs[timestamp] += np.string_('\n'+msg)
-        
+            self.comments.attrs[timestamp] += np.string_('\n' + msg)
+
         else:
             # create new entry
             self.comments.attrs[timestamp] = np.string_(msg)
+            
+    def get_memmap(self, group):
+        """ Get the emd group data as a memmap so that the data
+        is not loaded into memory. Essentially calls get_emdgroup()
+        with the keyword memmap keyword equals True.
+        
+        See get_emdgroup() for parameters and return values.
+        
+        
+        """
+        return self.get_emdgroup(group, memmap=True)
         
 
-def defaultDims(data):
-    ''' A helper function that can generate properly setup dim tuple
+def defaultDims(data, pixel_size=None):
+    """ A helper function that can generate a properly setup dim tuple
     with default values to allow quick writing of EMD files without
-    the need to create these dim vectors.
-    
-    Parameters:
-        data (ndarray) : The data that will be written to the EMD file. This is used to get the number of dims and their shape
-        
-    Returns:
-        (tuple) : a properly formatter tuple of dim vectors as input to emd.put_emdgroup()
-    '''
+    the need to create these dim vectors manually.
+
+    Parameters
+    ----------
+        data : ndarray
+            The data that will be written to the EMD file. This is used to get the number of dims and their shape
+
+        pixel_size : tuple, optional
+            A tuple of pixel sizes. Must have same length as the number of dimensions of data.
+
+    Returns
+    -------
+        dims: list
+            A properly formatted tuple of dim vectors used as input
+            to emd.emdFile.put_emdgroup()
+    """
+    if isinstance(pixel_size, np.ndarray):
+        raise Exception('pixel_size must be a tuple')
+
     num = data.ndim
-    
+
+    if not pixel_size:
+        pixel_size = (1,) * num
+
+    if len(pixel_size) != data.ndim:
+        raise ValueError('pixel_size and data dimensions must match')
+
     dims = []
     for ii in range(num):
-        curDim = (np.linspace(0,data.shape[ii]-1,data.shape[ii]),'dim{}'.format(ii),'unit{}'.format(ii))
+        curDim = [np.linspace(0, data.shape[ii] - 1, data.shape[ii]) * pixel_size[ii],
+                  'dim{}'.format(ii+1), 'unit{}'.format(ii+1)]
         dims.append(curDim)
-    
+
     return dims
+
+
+def emdReader(filename, dsetNum=0):
+    """ A simple helper function to read in the data and metadata 
+    in a structured format similar to the other ncempy readers.
+
+    Note
+    ----
+        Note fully implemented yet. Work in progress.
+
+    Parameters
+    ----------
+        filename : str or pathlib.Path
+            The path to the file as a string.
+        dsetNum : int
+            The index of the data set to load.
+            
+    Returns
+    -------
+        : dict
+            Data and metadata as a dictionary similar to other ncempy readers.
+
+    Example
+    -------
+        Simply load all data and metadata from a data set in an EMD Velox file
+            >> import ncempy.io as nio
+            >> emd0 = nio.emd.emdReader('filename.emd', dsetNum = 0)
+
+    """
+    with fileEMD(filename, readonly=True) as emd0:
+        d, dims = emd0.get_emdgroup(dsetNum, memmap=False)  # memmap must be false. File is closed
+        out = {'data': d, 'filename': filename, 'pixelSize': []}
+
+        for dim in dims:
+            try:
+                d = dim[0][1] - dim[0][0]
+            except:
+                d = 0
+            out['pixelSize'].append(d)
+        out['pixelUnit'] = [aa[2] for aa in dims]
+        out['pixelName'] = [aa[1] for aa in dims]
+        return out
+
+
+def emdWriter(filename, data, pixel_size=None):
+    """ Simple method to write data to a file formatted as an EMD v0.2. The only possible metadata to write is the pixel
+    size for each dimension. Use the emd.fileEMD() class for more complex operations. The file must not already exist.
+
+    Parameters
+    ----------
+    filename : str or pathlib.Path
+        The path and file name to write the data to.
+    data : ndarray
+        The data as an ndarray to write to the file.
+    pixel_size : tuple
+        A tuple with the same length as the number of dims in data. len(pixel_size) == data.ndim
+
+    """
+    if isinstance(filename, str):
+        filename = Path(filename)
+
+    if pixel_size:
+        try:
+            assert len(pixel_size) == data.ndim
+        except ValueError:
+            raise ValueError('pixel_size length must match the number of dimensions of data.')
+
+    if not filename.exists():
+        with fileEMD(filename, readonly=False) as emd0:
+            # Setup the dims for the EMD file. Pixel size is set to 1 by default for each dimension
+            dims0 = defaultDims(data, pixel_size=pixel_size)
+            # Write the data to he emd file.
+            emd0.put_emdgroup('converted', data, dims0)
+    else:
+        raise FileExistsError

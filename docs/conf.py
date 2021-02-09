@@ -36,6 +36,8 @@ extensions = [
     'sphinx.ext.napoleon',
 ]
 
+napoleon_include_init_with_doc = False
+
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
 
@@ -52,7 +54,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = 'openNCEM'
-copyright = '2016, F. Niekiel, P. Ercius, C. Ophus, T. Pekin'
+copyright = '2020, F. Niekiel, P. Ercius, C. Ophus, T. Pekin'
 author = 'F. Niekiel, P. Ercius, C. Ophus, T. Pekin'
 
 # The version info for the project you're documenting, acts as replacement for
@@ -79,7 +81,7 @@ language = 'en'
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
-exclude_patterns = ['_build']
+exclude_patterns = ['_build', 'docs']
 
 # The reST default role (used for this markup: `text`) to use for all
 # documents.

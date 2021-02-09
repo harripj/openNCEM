@@ -6,6 +6,17 @@ A collection of packages and tools for electron microscopy data analysis support
 
 Read the documentation: https://openncem.readthedocs.io/en/latest/.
 
+Installation of ncempy package
+==============================
+
+The newest version can be installed using pip:
+
+``>> pip install ncempy``
+
+To ensure dependencies for the EDS tomography reconstruction are installed:
+
+``>> pip install ncempy[edstomo]``
+
 Components
 ==========
 

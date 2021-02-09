@@ -2,5 +2,12 @@ h5py
 numpy
 scipy
 h5py
-h5py_cache
 matplotlib
+glob2[edstomo]
+scipy[edstomo]
+scikit-image[edstomo]
+matplotlib[edstomo]
+ipyvolume[edstomo]
+genfire[edstomo]
+hyperspy[edstomo]
+pyfftw[edstomo]
